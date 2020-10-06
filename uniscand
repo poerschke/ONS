@@ -1,0 +1,83 @@
+#!/bin/bash
+
+AZUL='\033[0;34m'
+VERDE='\033[1;32m'
+VERMELHO_CLARO='\033[1;31m'
+NORMAL='\033[0m'
+
+PID_FILE="/var/run/uniscan.pid"
+INITSCRIPT="$(basename "$0")"
+TIMEOUT=30
+
+function usage(){
+    echo -e " Usage:\n\t$INITSCRIPT [start|stop|restart|status|reload]" 1>&2
+}
+
+function running(){
+    ps -p $(head -1 $PID_FILE) 1>&- 2>&-
+    echo $?
+}
+
+function Print_Return(){
+    echo -en "\r"
+
+    case $1 in
+           0) echo -en "\033[70C$AZUL[$VERDE  OK  $AZUL] $NORMAL\n";;
+           *) echo -en "\033[70C$AZUL[$VERMELHO_CLARO FAIL $AZUL] $NORMAL\n";;
+    esac
+
+	return 0 
+}
+
+[ -z "$1" ] && usage && exit 1
+
+COMMAND="$1"
+shift
+
+case $COMMAND in
+status)
+	[ $(running) -eq 0 ] && echo " Uniscan is running... PID: $(head -1 $PID_FILE)" || echo " Uniscan is stoped..."
+    ;;
+start)
+	echo -n " Starting Uniscan..."
+	[ $(running) -eq 1 ] && /sbin/uniscan 1>&- 2>&- &
+
+	while [ $(running) -eq 1 ] && [ $TIMEOUT -gt 0 ]; do
+		sleep 1
+		((TIMEOUT--))
+	done
+	
+	Print_Return $(running)
+    ;;
+stop)
+	echo -n " Stoping Uniscan..."
+        [ $(running) -eq 0 ] && kill $(head -1 $PID_FILE) 1>&- 2>&- &
+        
+        while [ $(running) -eq 0 ] && [ $TIMEOUT -gt 0 ]; do
+                sleep 1
+		((TIMEOUT--))
+        done
+
+	if [ $(running) -eq 0 ]; then
+	        Print_Return 1
+		echo -n " Forcing stop..."
+		kill -9 $(head -1 $PID_FILE) 1>&- 2>&-
+	fi
+
+	Print_Return 0
+    ;;
+restart)
+	$0 stop
+	$0 start
+    ;;
+reload)
+	echo -n " Sending HUP signal..."
+	kill -s HUP $(head -1 $PID_FILE) 1>&- 2>&-
+	Print_Return $?
+    ;;
+*)
+	usage
+	exit 1
+esac
+
+exit 0
